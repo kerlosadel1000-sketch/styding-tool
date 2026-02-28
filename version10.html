@@ -1,0 +1,1248 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>LectureLens – مساعد المحاضرات</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Syne:wght@400;700;800&family=IBM+Plex+Mono:wght@400;500&family=Cairo:wght@400;600;700&display=swap');
+
+  :root {
+    --bg: #0a0a0f;
+    --surface: #13131a;
+    --surface2: #1c1c28;
+    --accent: #00e5ff;
+    --accent2: #ff6b35;
+    --accent3: #7c3aed;
+    --text: #e8e8f0;
+    --text-dim: #7a7a9a;
+    --border: rgba(0,229,255,0.12);
+    --glow: 0 0 20px rgba(0,229,255,0.15);
+  }
+
+  * { margin:0; padding:0; box-sizing:border-box; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Cairo', sans-serif;
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  /* Animated bg */
+  body::before {
+    content:'';
+    position:fixed; inset:0;
+    background: 
+      radial-gradient(ellipse 60% 40% at 20% 10%, rgba(0,229,255,0.05) 0%, transparent 60%),
+      radial-gradient(ellipse 50% 30% at 80% 80%, rgba(124,58,237,0.07) 0%, transparent 60%);
+    pointer-events:none; z-index:0;
+  }
+
+  header {
+    position:relative; z-index:10;
+    display:flex; align-items:center; justify-content:space-between;
+    padding: 18px 28px;
+    border-bottom: 1px solid var(--border);
+    background: rgba(10,10,15,0.8);
+    backdrop-filter: blur(12px);
+  }
+
+  .logo {
+    font-family: 'Syne', sans-serif;
+    font-weight: 800;
+    font-size: 1.4rem;
+    color: var(--accent);
+    letter-spacing:-0.5px;
+    display:flex; align-items:center; gap:8px;
+  }
+  .logo span { color: var(--text-dim); font-weight:400; font-size:0.85rem; }
+
+  .status-pill {
+    display:flex; align-items:center; gap:8px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius:999px;
+    padding:6px 14px;
+    font-size:0.8rem;
+    color: var(--text-dim);
+  }
+  .status-dot {
+    width:8px; height:8px; border-radius:50%;
+    background: #333;
+    transition: background 0.3s;
+  }
+  .status-dot.active { background: #00e87a; box-shadow:0 0 8px #00e87a; animation: pulse 1.5s infinite; }
+  .status-dot.paused { background: var(--accent2); box-shadow:0 0 8px var(--accent2); }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }
+
+  main {
+    position:relative; z-index:5;
+    display:grid;
+    grid-template-columns: 1fr 340px;
+    gap:0;
+    height: calc(100vh - 65px);
+  }
+
+  /* TRANSCRIPT PANEL */
+  .transcript-panel {
+    display:flex; flex-direction:column;
+    border-right: 1px solid var(--border);
+    overflow:hidden;
+  }
+
+  .panel-header {
+    display:flex; align-items:center; justify-content:space-between;
+    padding:14px 20px;
+    border-bottom:1px solid var(--border);
+    background: var(--surface);
+  }
+
+  .panel-title {
+    font-family:'Syne',sans-serif;
+    font-weight:700;
+    font-size:0.85rem;
+    text-transform:uppercase;
+    letter-spacing:2px;
+    color: var(--text-dim);
+  }
+
+  .controls {
+    display:flex; gap:8px; align-items:center;
+  }
+
+  .btn {
+    display:flex; align-items:center; gap:6px;
+    padding:8px 16px;
+    border-radius:8px;
+    border:1px solid var(--border);
+    background: var(--surface2);
+    color: var(--text);
+    font-family:'Cairo',sans-serif;
+    font-size:0.82rem;
+    cursor:pointer;
+    transition: all 0.2s;
+  }
+  .btn:hover { border-color: var(--accent); color: var(--accent); box-shadow: var(--glow); }
+  .btn.primary {
+    background: var(--accent);
+    color: #000;
+    border-color: var(--accent);
+    font-weight:700;
+  }
+  .btn.primary:hover { background: #00c8e0; box-shadow: 0 0 24px rgba(0,229,255,0.4); }
+  .btn.danger { border-color: rgba(255,107,53,0.3); }
+  .btn.danger:hover { border-color: var(--accent2); color: var(--accent2); }
+  .btn:disabled { opacity:0.4; cursor:not-allowed; }
+
+  .transcript-content {
+    flex:1; overflow-y:auto;
+    padding:20px;
+    scroll-behavior:smooth;
+  }
+  .transcript-content::-webkit-scrollbar { width:4px; }
+  .transcript-content::-webkit-scrollbar-track { background:transparent; }
+  .transcript-content::-webkit-scrollbar-thumb { background:var(--border); border-radius:99px; }
+
+  .empty-state {
+    display:flex; flex-direction:column; align-items:center; justify-content:center;
+    height:100%;
+    gap:16px;
+    color: var(--text-dim);
+    text-align:center;
+  }
+  .empty-icon { font-size:3rem; opacity:0.3; }
+  .empty-state h3 { font-size:1rem; color: var(--text-dim); font-weight:600; }
+  .empty-state p { font-size:0.82rem; max-width:260px; line-height:1.6; }
+
+  /* Transcript segments */
+  .segment {
+    margin-bottom:16px;
+    padding:14px 16px;
+    background: var(--surface);
+    border:1px solid var(--border);
+    border-radius:12px;
+    transition: border-color 0.2s;
+    animation: slideIn 0.3s ease;
+  }
+  @keyframes slideIn { from{opacity:0;transform:translateY(8px)} to{opacity:1;transform:none} }
+
+  .segment:hover { border-color: rgba(0,229,255,0.25); }
+
+  .segment-meta {
+    display:flex; justify-content:space-between; align-items:center;
+    margin-bottom:8px;
+  }
+  .segment-time {
+    font-family:'IBM Plex Mono',monospace;
+    font-size:0.72rem;
+    color: var(--accent);
+    opacity:0.7;
+  }
+  .segment-actions { display:flex; gap:6px; opacity:0; transition:opacity 0.2s; }
+  .segment:hover .segment-actions { opacity:1; }
+  .seg-btn {
+    padding:3px 8px;
+    border:1px solid var(--border);
+    border-radius:5px;
+    background:transparent;
+    color:var(--text-dim);
+    font-size:0.72rem;
+    cursor:pointer;
+    transition: all 0.15s;
+    font-family:'Cairo',sans-serif;
+  }
+  .seg-btn:hover { border-color:var(--accent); color:var(--accent); }
+
+  .segment-text {
+    font-family:'IBM Plex Mono',monospace;
+    font-size:0.88rem;
+    line-height:1.8;
+    color: var(--text);
+    direction:ltr; text-align:left;
+  }
+
+  .segment-text .word {
+    display:inline;
+    cursor:pointer;
+    border-radius:3px;
+    padding:1px 2px;
+    transition: background 0.15s;
+    position:relative;
+  }
+  .segment-text .word:hover { background:rgba(0,229,255,0.15); color:var(--accent); }
+
+  .segment-arabic {
+    margin-top:10px;
+    padding:10px;
+    background:rgba(124,58,237,0.08);
+    border:1px solid rgba(124,58,237,0.2);
+    border-radius:8px;
+    font-size:0.85rem;
+    line-height:1.7;
+    color: #c4b5fd;
+    direction:rtl; text-align:right;
+    display:none;
+  }
+
+  /* Word tooltip */
+  .word-tooltip {
+    position:fixed;
+    background: var(--surface2);
+    border:1px solid var(--accent);
+    border-radius:10px;
+    padding:12px 14px;
+    max-width:240px;
+    font-size:0.82rem;
+    z-index:1000;
+    box-shadow:0 8px 32px rgba(0,0,0,0.5), var(--glow);
+    pointer-events:none;
+    opacity:0;
+    transform:translateY(4px);
+    transition:opacity 0.15s, transform 0.15s;
+    direction:rtl; text-align:right;
+  }
+  .word-tooltip.visible { opacity:1; transform:none; }
+  .tooltip-word { font-family:'Syne',sans-serif; font-weight:700; color:var(--accent); font-size:0.95rem; direction:ltr; text-align:left; }
+  .tooltip-ar { color:var(--text-dim); margin-top:4px; font-size:0.8rem; }
+
+  /* Term highlight */
+  .term-highlight {
+    background:rgba(255,107,53,0.12);
+    border-bottom:2px solid var(--accent2);
+    border-radius:3px;
+    cursor:pointer;
+  }
+  .term-highlight:hover { background:rgba(255,107,53,0.25); }
+
+  /* Interim text */
+  .interim-segment {
+    margin-bottom:12px;
+    padding:12px 16px;
+    border:1px dashed rgba(0,229,255,0.2);
+    border-radius:10px;
+    font-family:'IBM Plex Mono',monospace;
+    font-size:0.85rem;
+    color: var(--text-dim);
+    direction:ltr; text-align:left;
+    animation: blink-border 1.5s infinite;
+  }
+  @keyframes blink-border { 0%,100%{border-color:rgba(0,229,255,0.2)} 50%{border-color:rgba(0,229,255,0.5)} }
+
+  /* SIDEBAR */
+  .sidebar {
+    display:flex; flex-direction:column;
+    background: var(--surface);
+    overflow:hidden;
+  }
+
+  .sidebar-tabs {
+    display:flex;
+    border-bottom:1px solid var(--border);
+  }
+  .tab {
+    flex:1; padding:12px 8px;
+    text-align:center;
+    font-size:0.78rem;
+    font-weight:600;
+    color:var(--text-dim);
+    cursor:pointer;
+    border-bottom:2px solid transparent;
+    transition: all 0.2s;
+  }
+  .tab.active { color:var(--accent); border-bottom-color:var(--accent); }
+
+  .tab-content { flex:1; overflow-y:auto; padding:16px; display:none; }
+  .tab-content.active { display:block; }
+  .tab-content::-webkit-scrollbar { width:3px; }
+  .tab-content::-webkit-scrollbar-thumb { background:var(--border); }
+
+  /* AI Chat */
+  .chat-messages {
+    display:flex; flex-direction:column; gap:10px;
+    margin-bottom:12px;
+  }
+
+  .chat-msg {
+    padding:10px 12px;
+    border-radius:10px;
+    font-size:0.82rem;
+    line-height:1.7;
+    animation: slideIn 0.2s ease;
+  }
+  .chat-msg.user {
+    background:rgba(0,229,255,0.08);
+    border:1px solid rgba(0,229,255,0.15);
+    color:var(--accent);
+    direction:rtl; text-align:right;
+    margin-left:20px;
+  }
+  .chat-msg.assistant {
+    background:var(--surface2);
+    border:1px solid var(--border);
+    direction:rtl; text-align:right;
+    margin-right:20px;
+  }
+  .chat-msg.loading { color:var(--text-dim); }
+
+  .chat-input-area {
+    display:flex; gap:6px;
+  }
+  .chat-input {
+    flex:1;
+    background:var(--surface2);
+    border:1px solid var(--border);
+    border-radius:8px;
+    padding:8px 12px;
+    color:var(--text);
+    font-family:'Cairo',sans-serif;
+    font-size:0.82rem;
+    direction:rtl;
+    outline:none;
+    transition:border-color 0.2s;
+    resize:none;
+  }
+  .chat-input:focus { border-color:var(--accent); }
+  .send-btn {
+    padding:8px 12px;
+    background:var(--accent);
+    color:#000;
+    border:none;
+    border-radius:8px;
+    cursor:pointer;
+    font-size:1rem;
+    font-weight:700;
+    transition: all 0.2s;
+  }
+  .send-btn:hover { background:#00c8e0; }
+  .send-btn:disabled { opacity:0.4; cursor:not-allowed; }
+
+  /* Saved items */
+  .saved-item {
+    padding:10px 12px;
+    background:var(--surface2);
+    border:1px solid var(--border);
+    border-radius:8px;
+    margin-bottom:8px;
+    font-size:0.8rem;
+    animation: slideIn 0.3s ease;
+  }
+  .saved-item-text { font-family:'IBM Plex Mono',monospace; direction:ltr; text-align:left; color:var(--text-dim); margin-bottom:4px; font-size:0.77rem; }
+  .saved-item-time { font-size:0.7rem; color: var(--accent); opacity:0.5; }
+  .saved-item-actions { display:flex; gap:4px; margin-top:8px; flex-wrap:wrap; }
+
+  /* Terms panel */
+  .term-card {
+    padding:12px;
+    background:var(--surface2);
+    border:1px solid rgba(255,107,53,0.2);
+    border-radius:8px;
+    margin-bottom:8px;
+    cursor:pointer;
+    transition:all 0.2s;
+  }
+  .term-card:hover { border-color:var(--accent2); }
+  .term-name { font-family:'Syne',sans-serif; font-weight:700; color:var(--accent2); font-size:0.9rem; }
+  .term-def { font-size:0.78rem; color:var(--text-dim); margin-top:4px; line-height:1.6; direction:rtl; text-align:right; }
+
+  /* Bottom controls */
+  .bottom-controls {
+    padding:14px 20px;
+    border-top:1px solid var(--border);
+    background:var(--surface);
+    display:flex; gap:8px; align-items:center; flex-wrap:wrap;
+  }
+
+  .mic-btn {
+    display:flex; align-items:center; justify-content:center; gap:8px;
+    padding:12px 24px;
+    border-radius:50px;
+    border:2px solid var(--border);
+    background:var(--surface2);
+    color:var(--text);
+    font-family:'Cairo',sans-serif;
+    font-size:0.9rem;
+    font-weight:700;
+    cursor:pointer;
+    transition:all 0.3s;
+  }
+  .mic-btn.listening {
+    background:rgba(0,232,122,0.08);
+    border-color:#00e87a;
+    color:#00e87a;
+    box-shadow:0 0 24px rgba(0,232,122,0.2);
+  }
+  .mic-btn.paused-state {
+    background:rgba(255,107,53,0.08);
+    border-color:var(--accent2);
+    color:var(--accent2);
+  }
+
+  .lang-select {
+    background:var(--surface2);
+    border:1px solid var(--border);
+    border-radius:8px;
+    padding:10px 14px;
+    color:var(--text);
+    font-family:'Cairo',sans-serif;
+    font-size:0.82rem;
+    cursor:pointer;
+    outline:none;
+  }
+  .lang-select:focus { border-color:var(--accent); }
+
+  /* Context menu */
+  .context-menu {
+    position:fixed;
+    background:var(--surface2);
+    border:1px solid var(--border);
+    border-radius:10px;
+    padding:6px;
+    z-index:2000;
+    min-width:180px;
+    box-shadow:0 12px 40px rgba(0,0,0,0.6);
+    display:none;
+  }
+  .context-item {
+    padding:8px 12px;
+    border-radius:6px;
+    font-size:0.82rem;
+    cursor:pointer;
+    transition:background 0.15s;
+    display:flex; align-items:center; gap:8px;
+  }
+  .context-item:hover { background:rgba(0,229,255,0.08); color:var(--accent); }
+  .context-sep { height:1px; background:var(--border); margin:4px 0; }
+
+  /* Term popup */
+  .term-popup {
+    position:fixed;
+    background:var(--surface2);
+    border:1px solid var(--accent2);
+    border-radius:12px;
+    padding:16px;
+    max-width:320px;
+    z-index:3000;
+    box-shadow:0 12px 50px rgba(0,0,0,0.7);
+    display:none;
+    animation:slideIn 0.2s ease;
+  }
+  .term-popup-header { display:flex; justify-content:space-between; align-items:center; margin-bottom:10px; }
+  .term-popup-word { font-family:'Syne',sans-serif; font-weight:800; color:var(--accent2); font-size:1.1rem; direction:ltr; }
+  .close-popup { background:none; border:none; color:var(--text-dim); cursor:pointer; font-size:1.2rem; }
+  .term-popup-content { font-size:0.82rem; line-height:1.7; direction:rtl; text-align:right; }
+  .term-popup-loading { color:var(--text-dim); text-align:center; padding:10px 0; }
+
+  .notification {
+    position:fixed; bottom:24px; left:50%; transform:translateX(-50%);
+    background:var(--surface2);
+    border:1px solid var(--accent);
+    padding:10px 20px;
+    border-radius:99px;
+    font-size:0.82rem;
+    color:var(--accent);
+    z-index:5000;
+    opacity:0;
+    transition:opacity 0.3s;
+    pointer-events:none;
+    white-space:nowrap;
+  }
+  .notification.show { opacity:1; }
+
+  @media(max-width:768px) {
+    main { grid-template-columns:1fr; grid-template-rows:1fr 300px; }
+    .transcript-panel { border-right:none; border-bottom:1px solid var(--border); }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo">🎓 LectureLens <span>مساعد المحاضرات</span></div>
+  <div style="display:flex;align-items:center;gap:10px">
+    <button class="btn" onclick="showKeyModal()" style="font-size:0.78rem">🔑 AI Key</button>
+    <div class="status-pill">
+      <div class="status-dot" id="statusDot"></div>
+      <span id="statusText">متوقف</span>
+    </div>
+  </div>
+</header>
+
+<!-- YouTube bar -->
+<div id="ytBar" style="display:none;padding:10px 20px;background:var(--surface2);border-bottom:1px solid var(--border)">
+  <div style="display:flex;gap:8px;align-items:center">
+    <span>▶️</span>
+    <input id="ytInput" type="url" placeholder="https://www.youtube.com/watch?v=..."
+      onkeydown="if(event.key==='Enter')fetchYTTranscript()"
+      style="flex:1;padding:8px 12px;border-radius:8px;border:1px solid var(--border);background:var(--surface);color:var(--text);font-size:0.82rem;outline:none;direction:ltr">
+    <button class="btn primary" onclick="fetchYTTranscript()">جيب الكابشن</button>
+    <button class="btn" onclick="document.getElementById('ytBar').style.display='none'">✕</button>
+  </div>
+  <p id="ytStatus" style="font-size:0.78rem;color:var(--text-dim);margin-top:6px;direction:rtl"></p>
+</div>
+
+<main>
+  <div class="transcript-panel">
+    <div class="panel-header">
+      <span class="panel-title">📝 النص المُفرَّغ</span>
+      <div class="controls">
+        <button class="btn" onclick="document.getElementById('ytBar').style.display=document.getElementById('ytBar').style.display==='none'?'block':'none'">▶️ YouTube</button>
+        <button class="btn" onclick="clearTranscript()">🗑️ مسح</button>
+        <button class="btn" onclick="copyAll()">📋 نسخ الكل</button>
+        <button class="btn" id="showTermsBtn" onclick="toggleAutoTerms()">🔍 المصطلحات</button>
+      </div>
+    </div>
+    <div class="transcript-content" id="transcriptContent">
+      <div class="empty-state" id="emptyState">
+        <div class="empty-icon">🎙️</div>
+        <h3>في انتظار المحاضرة</h3>
+        <p>اضغط ابدأ الاستماع أو حط رابط YouTube</p>
+      </div>
+    </div>
+    <div class="bottom-controls">
+      <button class="mic-btn" id="micBtn" onclick="toggleListening()">
+        <span id="micIcon">🎙️</span>
+        <span id="micLabel">ابدأ الاستماع</span>
+      </button>
+      <select class="lang-select" id="langSelect">
+        <option value="en-US">🇺🇸 English (US)</option>
+        <option value="en-GB">🇬🇧 English (UK)</option>
+        <option value="ar-EG">🇪🇬 عربي</option>
+      </select>
+      <button class="btn" id="pauseBtn" onclick="pauseResume()" disabled>⏸️ إيقاف مؤقت</button>
+    </div>
+  </div>
+
+  <div class="sidebar">
+    <div class="sidebar-tabs">
+      <div class="tab active" onclick="switchTab('chat')">🤖 AI مساعد</div>
+      <div class="tab" onclick="switchTab('saved')">📌 محفوظات</div>
+      <div class="tab" onclick="switchTab('terms')">📚 مصطلحات</div>
+    </div>
+    <div class="tab-content active" id="tab-chat">
+      <div class="chat-messages" id="chatMessages">
+        <div class="chat-msg assistant">أهلاً! اسألني عن أي حاجة في المحاضرة 🎓</div>
+      </div>
+      <div class="chat-input-area">
+        <textarea class="chat-input" id="chatInput" placeholder="اسأل عن حاجة..." rows="2" onkeydown="handleChatKey(event)"></textarea>
+        <button class="send-btn" id="sendBtn" onclick="sendChat()">↑</button>
+      </div>
+    </div>
+    <div class="tab-content" id="tab-saved">
+      <div id="savedList"><p style="color:var(--text-dim);font-size:0.82rem;text-align:center;padding:20px 0">لسه ماحفظتيش حاجة 📌</p></div>
+    </div>
+    <div class="tab-content" id="tab-terms">
+      <div id="termsList"><p style="color:var(--text-dim);font-size:0.82rem;text-align:center;padding:20px 0">المصطلحات هتظهر هنا 📚</p></div>
+    </div>
+  </div>
+</main>
+
+<div class="word-tooltip" id="wordTooltip">
+  <div class="tooltip-word" id="tooltipWord"></div>
+  <div class="tooltip-ar" id="tooltipAr"></div>
+</div>
+
+<div class="context-menu" id="contextMenu">
+  <div class="context-item" id="ctxSelBtn" style="display:none" onclick="ctxTranslateSelected()">🌍 ترجم النص المحدد</div>
+  <div class="context-item" onclick="ctxTranslateFull()">🌐 ترجم الجملة كلها</div>
+  <div class="context-item" onclick="explainSelection()">🤖 فسّرلي بالـ AI</div>
+  <div class="context-item" onclick="saveSelection()">📌 حفظ</div>
+  <div class="context-sep"></div>
+  <div class="context-item" onclick="copySelection()">📋 نسخ</div>
+  <div class="context-item" onclick="searchTerm()">🔍 جوجل</div>
+</div>
+
+<div class="term-popup" id="termPopup">
+  <div class="term-popup-header">
+    <span class="term-popup-word" id="termPopupWord"></span>
+    <button class="close-popup" onclick="document.getElementById('termPopup').style.display='none'">✕</button>
+  </div>
+  <div class="term-popup-content" id="termPopupContent"></div>
+</div>
+
+<div id="keyModal" style="display:none;position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,0.8);backdrop-filter:blur(6px);align-items:center;justify-content:center">
+  <div style="background:#1c1c28;border:1px solid rgba(0,229,255,0.3);border-radius:16px;padding:28px;width:min(400px,92vw)">
+    <h3 style="font-family:Syne,sans-serif;color:#00e5ff;margin-bottom:10px">🤖 API Key للذكاء الاصطناعي</h3>
+    <p style="color:#7a7a9a;font-size:0.82rem;line-height:1.7;direction:rtl;margin-bottom:14px">
+      الترجمة ✅ مجانية بدون key.<br>
+      مزايا الـ AI تحتاج key من:
+      <a href="https://console.anthropic.com" target="_blank" style="color:#00e5ff">console.anthropic.com</a>
+      ← API Keys ← Create Key<br>
+      <span style="color:#e8e8f0">الـ Key بيتحفظ على جهازك بس.</span>
+    </p>
+    <input id="keyInput" type="password" placeholder="sk-ant-api03-..."
+      onkeydown="if(event.key==='Enter')submitKey()"
+      style="width:100%;padding:10px 14px;border-radius:8px;border:1px solid rgba(0,229,255,0.2);background:#0a0a0f;color:#e8e8f0;font-family:monospace;font-size:0.85rem;outline:none;margin-bottom:8px;direction:ltr;box-sizing:border-box">
+    <p id="keyError" style="display:none;color:#ff6b35;font-size:0.78rem;margin-bottom:8px;direction:rtl">⚠️ الـ Key لازم يبدأ بـ sk-ant-</p>
+    <div style="display:flex;gap:8px;justify-content:flex-end">
+      <button onclick="document.getElementById('keyModal').style.display='none'" style="padding:8px 16px;border-radius:8px;border:1px solid rgba(255,255,255,0.1);background:transparent;color:#7a7a9a;cursor:pointer;font-family:Cairo,sans-serif">تخطّي</button>
+      <button onclick="submitKey()" style="padding:8px 20px;border-radius:8px;border:none;background:#00e5ff;color:#000;font-weight:700;cursor:pointer;font-family:Cairo,sans-serif">حفظ ✓</button>
+    </div>
+  </div>
+</div>
+
+<div class="notification" id="notification"></div>
+
+<script>
+'use strict';
+
+// ── STATE ──────────────────────────────────────────────────────────
+var recognition   = null;
+var isListening   = false;
+var isPaused      = false;
+var segments      = [];
+var savedItems    = [];
+var detectedTerms = {};
+var autoTermsEnabled = true;
+var segmentCounter   = 0;
+var ctxSegId = null;
+var ctxText  = '';
+var interimEl    = null;
+var activeSegId  = null;
+var sessionFired = false;
+var silenceTimer = null;
+var SILENCE_MS   = 5000;
+var ANTHROPIC_KEY = localStorage.getItem('ll_key') || '';
+
+// ── API KEY ────────────────────────────────────────────────────────
+function showKeyModal() {
+  document.getElementById('keyModal').style.display = 'flex';
+  document.getElementById('keyInput').value = ANTHROPIC_KEY;
+  document.getElementById('keyError').style.display = 'none';
+}
+
+function submitKey() {
+  var v = document.getElementById('keyInput').value.trim();
+  if (!v.startsWith('sk-ant-')) {
+    document.getElementById('keyError').style.display = 'block';
+    return;
+  }
+  ANTHROPIC_KEY = v;
+  localStorage.setItem('ll_key', v);
+  document.getElementById('keyModal').style.display = 'none';
+  showNotification('✅ تم حفظ الـ Key');
+}
+
+// ── TERMS ──────────────────────────────────────────────────────────
+var TERMS = [
+  'algorithm','hypothesis','methodology','paradigm','synthesis','analysis',
+  'mitosis','meiosis','photosynthesis','osmosis','entropy','quantum',
+  'metabolism','neural','cortex','neuron','chromosome','genome','protein',
+  'derivative','integral','vector','matrix','polynomial','logarithm',
+  'theorem','axiom','corollary','empirical','correlation','regression',
+  'amplitude','frequency','wavelength','diffraction','refraction','conductivity',
+  'oxidation','reduction','catalyst','equilibrium','isomer','polymer',
+  'gdp','inflation','deficit','liability','asset','depreciation',
+  'cognitive','behavioral','stimulus','conditioning','perception','linguistics'
+];
+
+var TRANS = {
+  'algorithm':'خوارزمية','hypothesis':'فرضية','methodology':'منهجية',
+  'paradigm':'نموذج مرجعي','synthesis':'توليف','analysis':'تحليل',
+  'mitosis':'انقسام متساوٍ','meiosis':'انقسام اختزالي','photosynthesis':'بناء ضوئي',
+  'osmosis':'تناضح','entropy':'إنتروبيا','quantum':'كمي',
+  'metabolism':'الأيض','neural':'عصبي','cortex':'قشرة المخ',
+  'neuron':'خلية عصبية','chromosome':'كروموسوم','genome':'جينوم',
+  'protein':'بروتين','derivative':'مشتقة','integral':'تكامل',
+  'vector':'متجه','matrix':'مصفوفة','polynomial':'كثير الحدود',
+  'logarithm':'لوغاريتم','theorem':'نظرية','axiom':'بديهية',
+  'corollary':'نتيجة','empirical':'تجريبي','correlation':'ارتباط',
+  'regression':'انحدار','amplitude':'سعة','frequency':'تردد',
+  'wavelength':'طول موجي','diffraction':'حيود','refraction':'انكسار',
+  'conductivity':'توصيلية','oxidation':'أكسدة','reduction':'اختزال',
+  'catalyst':'محفز','equilibrium':'توازن','isomer':'متشكل','polymer':'بوليمر',
+  'gdp':'الناتج المحلي','inflation':'تضخم','deficit':'عجز',
+  'liability':'التزام','asset':'أصل','depreciation':'إهلاك',
+  'cognitive':'معرفي','behavioral':'سلوكي','stimulus':'منبه',
+  'conditioning':'تشريط','perception':'إدراك','linguistics':'لغويات'
+};
+
+var DEFS = {
+  'algorithm':'خطوات منطقية لحل مشكلة. قلب البرمجة والذكاء الاصطناعي.',
+  'hypothesis':'افتراض يُطرح للاختبار. لا يصبح حقيقة إلا بعد الإثبات.',
+  'photosynthesis':'تحويل النبات للضوء وCO₂ والماء إلى سكر وأكسجين.',
+  'osmosis':'انتقال الماء عبر غشاء من تركيز عالٍ لمنخفض.',
+  'entropy':'مقياس الفوضى في نظام. يزيد دائماً في الأنظمة المغلقة.',
+  'mitosis':'انقسام الخلية لخليتين متطابقتين.',
+  'meiosis':'انقسام ينتج خلايا جنسية بنصف الكروموسومات.',
+  'methodology':'المنهج والأدوات المستخدمة في البحث.'
+};
+
+// ── SPEECH RECOGNITION ─────────────────────────────────────────────
+function initRecognition() {
+  var SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!SR) { showNotification('❌ Chrome على الكمبيوتر فقط'); return null; }
+  var r = new SR();
+  r.continuous     = false;
+  r.interimResults = true;
+  r.lang           = document.getElementById('langSelect').value;
+  r.maxAlternatives = 1;
+
+  r.onresult = function(event) {
+    clearTimeout(silenceTimer);
+    var interim = '';
+    for (var i = 0; i < event.results.length; i++) {
+      var res = event.results[i];
+      if (res.isFinal) {
+        if (!sessionFired) {
+          sessionFired = true;
+          var text = res[0].transcript.trim();
+          if (text) {
+            appendToActive(text);
+            if (interimEl) { interimEl.remove(); interimEl = null; }
+          }
+        }
+      } else {
+        interim += res[0].transcript;
+      }
+    }
+    silenceTimer = setTimeout(function() { activeSegId = null; }, SILENCE_MS);
+    var c = document.getElementById('transcriptContent');
+    if (interim) {
+      if (!interimEl) {
+        interimEl = document.createElement('div');
+        interimEl.className = 'interim-segment';
+        c.appendChild(interimEl);
+      }
+      interimEl.textContent = interim;
+      c.scrollTop = 99999;
+    } else if (interimEl) {
+      interimEl.textContent = '';
+    }
+  };
+
+  r.onerror = function(e) {
+    if (e.error !== 'no-speech' && e.error !== 'aborted')
+      showNotification('⚠️ ' + e.error);
+  };
+
+  r.onend = function() {
+    if (interimEl) { interimEl.remove(); interimEl = null; }
+    if (isListening && !isPaused) {
+      sessionFired = false;
+      setTimeout(function() {
+        try { r.start(); } catch(e) {}
+      }, 50);
+    }
+  };
+
+  return r;
+}
+
+// ── SEGMENTS ───────────────────────────────────────────────────────
+function appendToActive(text) {
+  if (activeSegId !== null) {
+    var seg = segments.find(function(s) { return s.id === activeSegId; });
+    if (seg) {
+      seg.text += ' ' + text;
+      var el = document.getElementById('text-' + activeSegId);
+      if (el) { el.innerHTML = processText(seg.text, activeSegId); attachWords(el); }
+      if (autoTermsEnabled) detectTerms(text);
+      document.getElementById('transcriptContent').scrollTop = 99999;
+      return;
+    }
+  }
+  addSegment(text);
+}
+
+function addSegment(text) {
+  var id = ++segmentCounter;
+  activeSegId = id;
+  var t = new Date().toLocaleTimeString('ar-EG', {hour:'2-digit',minute:'2-digit',second:'2-digit'});
+  segments.push({ id:id, text:text, time:t, translated:null });
+  document.getElementById('emptyState') && document.getElementById('emptyState').remove();
+  var c = document.getElementById('transcriptContent');
+  var el = document.createElement('div');
+  el.className = 'segment';
+  el.id = 'seg-' + id;
+  el.innerHTML =
+    '<div class="segment-meta">' +
+      '<span class="segment-time">' + t + '</span>' +
+      '<div class="segment-actions">' +
+        '<button class="seg-btn" onclick="translateSeg(' + id + ')">🌍 AR</button>' +
+        '<button class="seg-btn" onclick="saveSeg(' + id + ')">📌</button>' +
+        '<button class="seg-btn" onclick="explainSeg(' + id + ')">🤖</button>' +
+        '<button class="seg-btn" onclick="copySeg(' + id + ')">📋</button>' +
+      '</div>' +
+    '</div>' +
+    '<div class="segment-text" id="text-' + id + '">' + processText(text, id) + '</div>' +
+    '<div class="segment-arabic" id="ar-' + id + '"></div>';
+  c.appendChild(el);
+  c.scrollTop = 99999;
+  attachWords(el);
+  if (autoTermsEnabled) detectTerms(text);
+  el.addEventListener('contextmenu', handleCtx);
+}
+
+function processText(text, id) {
+  return text.split(' ').map(function(w) {
+    var clean = w.replace(/[^a-zA-Z]/g,'').toLowerCase();
+    if (TERMS.indexOf(clean) !== -1) {
+      return '<span class="word term-highlight" data-word="' + clean + '" onclick="showTermInfo(\'' + clean + '\')">' + w + '</span>';
+    }
+    return '<span class="word" data-word="' + clean + '">' + w + '</span>';
+  }).join(' ');
+}
+
+function attachWords(parent) {
+  var words = parent.querySelectorAll('.word');
+  for (var i = 0; i < words.length; i++) {
+    words[i].addEventListener('mouseenter', showTip);
+    words[i].addEventListener('mouseleave', hideTip);
+  }
+}
+
+function detectTerms(text) {
+  var words = text.split(' ');
+  for (var i = 0; i < words.length; i++) {
+    var c = words[i].replace(/[^a-zA-Z]/g,'').toLowerCase();
+    if (TERMS.indexOf(c) !== -1 && !detectedTerms[c]) {
+      detectedTerms[c] = true;
+      var panel = document.getElementById('termsList');
+      var p = panel.querySelector('p');
+      if (p) p.remove();
+      var el = document.createElement('div');
+      el.className = 'term-card';
+      el.setAttribute('onclick', 'showTermInfo("' + c + '")');
+      el.innerHTML = '<div class="term-name">' + c + '</div><div class="term-def">' + (TRANS[c]||'اضغط للمزيد') + '</div>';
+      panel.appendChild(el);
+    }
+  }
+}
+
+// ── TOOLTIP ────────────────────────────────────────────────────────
+var tip = document.getElementById('wordTooltip');
+function showTip(e) {
+  var w = e.target.getAttribute('data-word');
+  if (!w || w.length < 3) return;
+  document.getElementById('tooltipWord').textContent = e.target.textContent;
+  document.getElementById('tooltipAr').textContent = TRANS[w] ? '🇪🇬 ' + TRANS[w] : 'كليك يمين للمزيد';
+  tip.classList.add('visible');
+  tip.style.left = Math.min(e.clientX+12, window.innerWidth-260) + 'px';
+  tip.style.top  = Math.max(e.clientY-60, 8) + 'px';
+}
+function hideTip() { tip.classList.remove('visible'); }
+
+// ── TRANSLATION ────────────────────────────────────────────────────
+function doTranslate(text, callback) {
+  fetch('https://api.mymemory.translated.net/get?q=' + encodeURIComponent(text) + '&langpair=en|ar')
+    .then(function(r) { return r.json(); })
+    .then(function(d) { callback(d.responseData && d.responseData.translatedText || '❌ فشلت الترجمة'); })
+    .catch(function() { callback('❌ خطأ في الاتصال'); });
+}
+
+function translateSeg(id) {
+  var seg = segments.find(function(s) { return s.id === id; });
+  if (!seg) return;
+  var el = document.getElementById('ar-' + id);
+  if (el.style.display === 'block') { el.style.display = 'none'; return; }
+  el.style.display = 'block';
+  if (seg.translated) { el.textContent = seg.translated; return; }
+  el.textContent = '⏳ جاري الترجمة...';
+  doTranslate(seg.text, function(result) {
+    seg.translated = result;
+    el.textContent = result;
+  });
+}
+
+function ctxTranslateSelected() {
+  if (!ctxText) return;
+  document.getElementById('contextMenu').style.display = 'none';
+  var popup = document.getElementById('termPopup');
+  document.getElementById('termPopupWord').textContent = '🌍 ترجمة';
+  document.getElementById('termPopupContent').textContent = '⏳ جاري الترجمة...';
+  popup.style.display = 'block';
+  popup.style.left = '50%'; popup.style.top = '50%';
+  popup.style.transform = 'translate(-50%,-50%)';
+  doTranslate(ctxText, function(result) {
+    document.getElementById('termPopupContent').innerHTML =
+      '<p style="direction:ltr;color:var(--text-dim);font-size:0.8rem;margin-bottom:8px">"' + ctxText + '"</p>' +
+      '<p style="direction:rtl;color:#c4b5fd;font-size:0.9rem;line-height:1.7">' + result + '</p>';
+  });
+}
+
+function ctxTranslateFull() {
+  document.getElementById('contextMenu').style.display = 'none';
+  translateSeg(ctxSegId);
+}
+
+function saveSeg(id) {
+  var seg = segments.find(function(s) { return s.id === id; });
+  if (!seg) return;
+  savedItems.push({ text:seg.text, time:seg.time });
+  renderSaved();
+  showNotification('✅ تم الحفظ');
+}
+
+function explainSeg(id) {
+  var seg = segments.find(function(s) { return s.id === id; });
+  if (!seg) return;
+  switchTab('chat');
+  addChatMsg('فسّرلي: "' + seg.text + '"', 'user');
+  callAI('Explain this English lecture sentence to an Arabic student in simple Arabic:\n\n"' + seg.text + '"', function(r) {
+    addChatMsg(r, 'assistant');
+  });
+}
+
+function copySeg(id) {
+  var seg = segments.find(function(s) { return s.id === id; });
+  if (!seg) return;
+  navigator.clipboard.writeText(seg.text).then(function() { showNotification('✅ نُسخ'); });
+}
+
+// ── CONTEXT MENU ───────────────────────────────────────────────────
+function handleCtx(e) {
+  e.preventDefault();
+  ctxText  = window.getSelection().toString().trim();
+  ctxSegId = parseInt(e.currentTarget.id.replace('seg-',''));
+  document.getElementById('ctxSelBtn').style.display = ctxText ? 'flex' : 'none';
+  var m = document.getElementById('contextMenu');
+  m.style.display = 'block';
+  m.style.left = Math.min(e.clientX, window.innerWidth-210) + 'px';
+  m.style.top  = Math.min(e.clientY, window.innerHeight-220) + 'px';
+}
+document.addEventListener('click', function() { document.getElementById('contextMenu').style.display = 'none'; });
+
+function explainSelection() {
+  document.getElementById('contextMenu').style.display = 'none';
+  var text = ctxText || (segments.find(function(s){return s.id===ctxSegId;})||{}).text || '';
+  if (!text) return;
+  switchTab('chat');
+  addChatMsg('فسّرلي: "' + text + '"', 'user');
+  callAI('Explain this to an Arabic student in simple Arabic:\n\n"' + text + '"', function(r) {
+    addChatMsg(r, 'assistant');
+  });
+}
+
+function saveSelection() {
+  document.getElementById('contextMenu').style.display = 'none';
+  var text = ctxText || (segments.find(function(s){return s.id===ctxSegId;})||{}).text || '';
+  if (!text) return;
+  savedItems.push({ text:text, time:new Date().toLocaleTimeString('ar-EG',{hour:'2-digit',minute:'2-digit'}) });
+  renderSaved();
+  showNotification('✅ تم الحفظ');
+}
+
+function copySelection() {
+  document.getElementById('contextMenu').style.display = 'none';
+  var text = ctxText || (segments.find(function(s){return s.id===ctxSegId;})||{}).text || '';
+  if (text) navigator.clipboard.writeText(text).then(function(){showNotification('✅ نُسخ');});
+}
+
+function searchTerm() {
+  document.getElementById('contextMenu').style.display = 'none';
+  var text = ctxText || (segments.find(function(s){return s.id===ctxSegId;})||{}).text || '';
+  if (text) window.open('https://www.google.com/search?q=' + encodeURIComponent(text + ' definition'), '_blank');
+}
+
+// ── TERM POPUP ─────────────────────────────────────────────────────
+function showTermInfo(term) {
+  var popup = document.getElementById('termPopup');
+  document.getElementById('termPopupWord').textContent = term;
+  var content = document.getElementById('termPopupContent');
+  popup.style.display = 'block';
+  popup.style.left = '50%'; popup.style.top = '50%';
+  popup.style.transform = 'translate(-50%,-50%)';
+
+  if (DEFS[term]) {
+    content.innerHTML =
+      '<p>🇪🇬 <strong>' + (TRANS[term]||'') + '</strong></p>' +
+      '<p style="margin-top:8px">' + DEFS[term] + '</p>' +
+      '<a href="https://www.google.com/search?q=' + encodeURIComponent(term+' definition') + '" target="_blank" style="display:inline-block;margin-top:10px;color:var(--accent);font-size:0.78rem">🔗 جوجل →</a>';
+    return;
+  }
+  content.innerHTML = '<div class="term-popup-loading">⏳ جاري البحث...</div>';
+  callAI('Briefly explain "' + term + '" in simple Arabic. Include: Arabic name, 2-sentence definition, why it matters.', function(info) {
+    content.innerHTML = info.replace(/\n/g,'<br>') +
+      '<br><a href="https://www.google.com/search?q=' + encodeURIComponent(term+' definition') + '" target="_blank" style="display:inline-block;margin-top:10px;color:var(--accent);font-size:0.78rem">🔗 جوجل →</a>';
+  });
+}
+
+// ── AI ─────────────────────────────────────────────────────────────
+function callAI(prompt, callback) {
+  if (!ANTHROPIC_KEY) { showKeyModal(); callback('❌ محتاج API Key'); return; }
+  var context = segments.slice(-8).map(function(s){return s.text;}).join('\n');
+  var body = JSON.stringify({
+    model: 'claude-haiku-4-5-20251001',
+    max_tokens: 600,
+    messages: [{
+      role: 'user',
+      content: context ? '[Transcript]:\n' + context + '\n\n---\n' + prompt : prompt
+    }]
+  });
+  fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-api-key': ANTHROPIC_KEY,
+      'anthropic-version': '2023-06-01',
+      'anthropic-dangerous-direct-browser-access': 'true'
+    },
+    body: body
+  })
+  .then(function(resp) {
+    if (resp.status === 401) {
+      ANTHROPIC_KEY = ''; localStorage.removeItem('ll_key');
+      callback('❌ الـ Key غلط، هيطلبه تاني');
+      showKeyModal();
+      return;
+    }
+    return resp.json();
+  })
+  .then(function(d) {
+    if (d && d.content && d.content[0]) callback(d.content[0].text);
+    else callback('❌ ما جاش رد');
+  })
+  .catch(function() { callback('❌ فشل الاتصال'); });
+}
+
+function sendChat() {
+  var inp = document.getElementById('chatInput');
+  var msg = inp.value.trim();
+  if (!msg) return;
+  inp.value = '';
+  addChatMsg(msg, 'user');
+  document.getElementById('sendBtn').disabled = true;
+  var loadEl = addChatMsg('⏳ جاري التفكير...', 'assistant loading');
+  callAI('You are a helpful Arabic study assistant. Student asks: ' + msg + '\n\nAnswer in Arabic clearly.', function(resp) {
+    loadEl.textContent = resp;
+    loadEl.classList.remove('loading');
+    document.getElementById('sendBtn').disabled = false;
+  });
+}
+
+function addChatMsg(text, role) {
+  var c = document.getElementById('chatMessages');
+  var el = document.createElement('div');
+  el.className = 'chat-msg ' + role;
+  el.textContent = text;
+  c.appendChild(el);
+  c.scrollTop = c.scrollHeight;
+  return el;
+}
+
+function handleChatKey(e) {
+  if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendChat(); }
+}
+
+// ── YOUTUBE ─────────────────────────────────────────────────────────
+function fetchYTTranscript() {
+  var url = document.getElementById('ytInput').value.trim();
+  var status = document.getElementById('ytStatus');
+  var m = url.match(/(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/embed\/)([a-zA-Z0-9_-]{11})/);
+  if (!m) { status.textContent = '❌ رابط YouTube غلط'; return; }
+  var vidId = m[1];
+  status.textContent = '⏳ جاري جلب الـ captions...';
+  fetch('https://corsproxy.io/?' + encodeURIComponent('https://www.youtube.com/watch?v=' + vidId))
+    .then(function(r) { return r.text(); })
+    .then(function(html) {
+      var match = html.match(/"captionTracks":\[.*?"baseUrl":"(.*?)"/);
+      if (!match) { status.textContent = '❌ الفيديو مش فيه captions انجليزي'; return; }
+      var capUrl = match[1].replace(/\\u0026/g,'&').replace(/\\/g,'');
+      return fetch('https://corsproxy.io/?' + encodeURIComponent(capUrl));
+    })
+    .then(function(r) { return r && r.text(); })
+    .then(function(xml) {
+      if (!xml) return;
+      var parser = new DOMParser();
+      var doc = parser.parseFromString(xml, 'text/xml');
+      var nodes = doc.querySelectorAll('text');
+      if (!nodes.length) { document.getElementById('ytStatus').textContent = '❌ ما لقيناش نص'; return; }
+      var buffer = ''; var wc = 0;
+      document.getElementById('emptyState') && document.getElementById('emptyState').remove();
+      nodes.forEach(function(node) {
+        var raw = node.textContent.replace(/&#39;/g,"'").replace(/&amp;/g,'&').replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/<[^>]*>/g,'').trim();
+        if (!raw) return;
+        buffer += (buffer ? ' ' : '') + raw;
+        wc += raw.split(' ').length;
+        if (wc >= 20) { addSegment(buffer); buffer = ''; wc = 0; }
+      });
+      if (buffer) addSegment(buffer);
+      document.getElementById('ytStatus').textContent = '✅ تم! ' + segments.length + ' فقرة';
+      document.getElementById('ytBar').style.display = 'none';
+    })
+    .catch(function(e) { document.getElementById('ytStatus').textContent = '❌ فشل: ' + e.message; });
+}
+
+// ── SAVED ──────────────────────────────────────────────────────────
+function renderSaved() {
+  var panel = document.getElementById('savedList');
+  if (!savedItems.length) {
+    panel.innerHTML = '<p style="color:var(--text-dim);font-size:0.82rem;text-align:center;padding:20px 0">لسه ماحفظتيش حاجة 📌</p>';
+    return;
+  }
+  panel.innerHTML = '';
+  var reversed = savedItems.slice().reverse();
+  reversed.forEach(function(item, ri) {
+    var i = savedItems.length - 1 - ri;
+    var el = document.createElement('div');
+    el.className = 'saved-item';
+    el.innerHTML =
+      '<div class="saved-item-text">' + item.text + '</div>' +
+      '<div class="saved-item-time">⏱️ ' + item.time + '</div>' +
+      '<div class="saved-item-actions">' +
+        '<button class="seg-btn" onclick="explainSavedItem(' + i + ')">🤖 فسّر</button>' +
+        '<button class="seg-btn" onclick="navigator.clipboard.writeText(savedItems[' + i + '].text)">📋</button>' +
+        '<button class="seg-btn" onclick="savedItems.splice(' + i + ',1);renderSaved()">🗑️</button>' +
+      '</div>';
+    panel.appendChild(el);
+  });
+}
+
+function explainSavedItem(i) {
+  switchTab('chat');
+  addChatMsg('فسّرلي: "' + savedItems[i].text + '"', 'user');
+  callAI('Explain this to an Arabic student in simple Arabic:\n\n"' + savedItems[i].text + '"', function(r) {
+    addChatMsg(r, 'assistant');
+  });
+}
+
+// ── CONTROLS ───────────────────────────────────────────────────────
+function toggleListening() {
+  if (!isListening) startListening();
+  else if (isPaused) resumeListening();
+  else stopListening();
+}
+
+function startListening() {
+  recognition = initRecognition();
+  if (!recognition) return;
+  sessionFired = false;
+  recognition.start();
+  isListening = true;
+  isPaused = false;
+  updateUI();
+  showNotification('🎙️ بدأ الاستماع');
+}
+
+function stopListening() {
+  if (recognition) { try { recognition.stop(); } catch(e) {} recognition = null; }
+  isListening = false; isPaused = false;
+  if (interimEl) { interimEl.remove(); interimEl = null; }
+  updateUI();
+  showNotification('⏹️ توقف');
+}
+
+function pauseResume() {
+  if (!isListening) return;
+  if (!isPaused) {
+    if (recognition) { try { recognition.stop(); } catch(e) {} }
+    isPaused = true;
+  } else {
+    resumeListening();
+  }
+  updateUI();
+}
+
+function resumeListening() {
+  if (!recognition) recognition = initRecognition();
+  try { recognition.lang = document.getElementById('langSelect').value; recognition.start(); } catch(e) {}
+  isPaused = false;
+  updateUI();
+}
+
+function updateUI() {
+  var btn = document.getElementById('micBtn');
+  var dot = document.getElementById('statusDot');
+  var st  = document.getElementById('statusText');
+  var pb  = document.getElementById('pauseBtn');
+  var mi  = document.getElementById('micIcon');
+  var ml  = document.getElementById('micLabel');
+  btn.classList.remove('listening','paused-state');
+  dot.classList.remove('active','paused');
+  if (isListening && !isPaused) {
+    btn.classList.add('listening'); dot.classList.add('active');
+    st.textContent='يستمع...'; mi.textContent='⏹️'; ml.textContent='إيقاف';
+    pb.disabled=false; pb.textContent='⏸️ إيقاف مؤقت';
+  } else if (isListening && isPaused) {
+    btn.classList.add('paused-state'); dot.classList.add('paused');
+    st.textContent='متوقف مؤقتاً'; mi.textContent='▶️'; ml.textContent='استمرار';
+    pb.textContent='▶️ استمرار'; pb.disabled=false;
+  } else {
+    st.textContent='متوقف'; mi.textContent='🎙️'; ml.textContent='ابدأ الاستماع';
+    pb.disabled=true; pb.textContent='⏸️ إيقاف مؤقت';
+  }
+}
+
+function clearTranscript() {
+  if (!confirm('هتمسح كل النص؟')) return;
+  segments=[]; segmentCounter=0; activeSegId=null;
+  clearTimeout(silenceTimer); detectedTerms={};
+  document.getElementById('termsList').innerHTML = '<p style="color:var(--text-dim);font-size:0.82rem;text-align:center;padding:20px 0">المصطلحات هتظهر هنا 📚</p>';
+  document.getElementById('transcriptContent').innerHTML = '<div class="empty-state" id="emptyState"><div class="empty-icon">🎙️</div><h3>في انتظار المحاضرة</h3><p>اضغط ابدأ الاستماع أو حط رابط YouTube</p></div>';
+  showNotification('🗑️ تم المسح');
+}
+
+function copyAll() {
+  var text = segments.map(function(s){return '['+s.time+'] '+s.text;}).join('\n\n');
+  navigator.clipboard.writeText(text).then(function(){showNotification('✅ نُسخ الكل');});
+}
+
+function toggleAutoTerms() {
+  autoTermsEnabled = !autoTermsEnabled;
+  document.getElementById('showTermsBtn').textContent = autoTermsEnabled ? '🔍 المصطلحات' : '🔍 متوقفة';
+}
+
+// ── TABS ───────────────────────────────────────────────────────────
+function switchTab(name) {
+  var tabs = document.querySelectorAll('.tab');
+  var names = ['chat','saved','terms'];
+  for (var i=0;i<tabs.length;i++) tabs[i].classList.toggle('active', names[i]===name);
+  var contents = document.querySelectorAll('.tab-content');
+  for (var j=0;j<contents.length;j++) contents[j].classList.toggle('active', contents[j].id==='tab-'+name);
+}
+
+// ── NOTIFICATION ───────────────────────────────────────────────────
+function showNotification(msg) {
+  var el = document.getElementById('notification');
+  el.textContent = msg;
+  el.classList.add('show');
+  setTimeout(function(){el.classList.remove('show');}, 2500);
+}
+
+// ── INIT ───────────────────────────────────────────────────────────
+updateUI();
+</script>
+</body>
+</html>
